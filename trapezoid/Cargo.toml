@@ -1,11 +1,12 @@
 [package]
-name = "cli"
+name = "trapezoid"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0"
-clap = { version = "3.0", features = ["cargo"] }
-trapezoid = { path = "../trapezoid" }
+glob = "0.3.0"
+walkdir = "2.0"
+rusqlite = { version = "0.28.0", features = ["bundled"] }
+anyhow = "1.0.58"
