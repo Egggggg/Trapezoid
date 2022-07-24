@@ -27,6 +27,8 @@ From here on, `app` will be used to refer to both the desktop app and the CLI
 - .tzignore
 	Files can be excluded from being tagged using the .tzignore file in the data directory
 	Globs can be added to this file manually, but they can also be added through the app
+- Listing Tagged Files
+	Tagged files can be listed by a single tag, or by multiple tags with an OR or AND filter
 
 ## CLI
 
@@ -46,3 +48,7 @@ nah
 
 - **`trapezoid ignore <GLOB>`** - Adds a glob to the .tzignore file in the data directory
   	- `<GLOB>`: *`glob`* - The glob to add
+
+- **`trapezoid list [-f|--filter] <TAGS>`** - Lists all files matching `TAGS`, depending on `filter`
+	- `
+	- `<TAGS>`: Any number of tags to use in the search
