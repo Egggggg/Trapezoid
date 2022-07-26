@@ -1,7 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{arg, builder::ValueParser, command, Command};
+use normpath::PathExt;
 use trapezoid::{
     utils::{to_path, to_pattern},
     Trapezoid,
@@ -42,12 +43,14 @@ fn main() -> Result<()> {
             let mut trapezoid =
                 Trapezoid::new(to_path("C://Users/mrhum/Projects/TrapezoidData")).unwrap();
 
-            println!("{:#?}\n{}", tags, glob);
+            let add_output = trapezoid.add_tags(
+                tags,
+                glob,
+                base.as_path().normalize().unwrap().as_path(),
+                None,
+            )?;
 
-            let add_output =
-                trapezoid.add_tags(tags, glob, &fs::canonicalize(base).unwrap().as_path(), None)?;
-
-            println!("{:#?}", add_output);
+            println!("{} files tagged", add_output.amount);
         }
         _ => unreachable!("A subcommand is required"),
     }

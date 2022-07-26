@@ -85,6 +85,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "normpath",
  "trapezoid",
 ]
 
@@ -169,6 +170,15 @@ dependencies = [
  "cc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "normpath"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04aaf5e9cb0fbf883cc0423159eacdf96a9878022084b35c462c428cab73bcaf"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]

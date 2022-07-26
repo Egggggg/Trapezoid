@@ -57,6 +57,8 @@ impl Trapezoid<'static> {
         base: &Path,
         ignore: Option<Vec<Pattern>>,
     ) -> Result<AddOutput> {
+        println!("{:#?}", base);
+
         let entries = WalkDir::new(base)
             .into_iter()
             .filter_entry(|e| {
