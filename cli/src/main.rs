@@ -1,5 +1,11 @@
+use std::{fs, path::PathBuf};
+
 use anyhow::Result;
-use clap::{arg, command, Command};
+use clap::{arg, builder::ValueParser, command, Command};
+use trapezoid::{
+    utils::{to_path, to_pattern},
+    Trapezoid,
+};
 
 fn main() -> Result<()> {
     let matches = command!()
@@ -16,7 +22,11 @@ fn main() -> Result<()> {
                         .required(true)
                         .action(clap::ArgAction::Append),
                 )
-                .arg(arg!(<glob> "The glob to find files from").multiple_values(true)),
+                .arg(arg!(<glob> "The glob to find files from").multiple_values(true))
+                .arg(
+                    arg!(<base> "Base path to start the search from")
+                        .value_parser(ValueParser::path_buf()),
+                ),
         )
         .get_matches();
 
@@ -27,9 +37,17 @@ fn main() -> Result<()> {
                 .unwrap()
                 .map(|v| v.as_str())
                 .collect::<Vec<&str>>();
-            let paths = sub_matches.get_one::<String>("glob");
+            let glob = to_pattern(sub_matches.get_one::<String>("glob").unwrap()).unwrap();
+            let base = sub_matches.get_one::<PathBuf>("base").unwrap();
+            let mut trapezoid =
+                Trapezoid::new(to_path("C://Users/mrhum/Projects/TrapezoidData")).unwrap();
 
-            println!("{:#?}\n{:#?}", tags, paths)
+            println!("{:#?}\n{}", tags, glob);
+
+            let add_output =
+                trapezoid.add_tags(tags, glob, &fs::canonicalize(base).unwrap().as_path(), None)?;
+
+            println!("{:#?}", add_output);
         }
         _ => unreachable!("A subcommand is required"),
     }
