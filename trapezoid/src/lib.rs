@@ -1,15 +1,18 @@
-use std::path::Path;
+use std::{
+    fs::{create_dir_all, File},
+    io::{self, BufRead},
+    path::PathBuf,
+};
 
 use anyhow::{anyhow, Result};
 use glob::Pattern;
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
-pub mod utils;
-
-pub struct Trapezoid<'a> {
-    pub data_path: &'a Path,
+pub struct Trapezoid {
+    pub data_path: PathBuf,
     db_conn: Connection,
+    pub ignore_path: PathBuf,
 }
 
 #[derive(Debug)]
@@ -18,20 +21,23 @@ pub struct AddOutput {
     pub tags: Vec<String>,
 }
 
-impl Trapezoid<'static> {
-    pub fn new(data_path: &'static Path) -> Result<Self> {
-        let path = Path::new(&data_path);
+impl Trapezoid {
+    pub fn new(data_path: &str, create_parents: bool) -> Result<Self> {
+        let path = PathBuf::from(&data_path);
         let conn: Connection;
+        let ignore_path: PathBuf;
 
-        if path.is_dir() {
-            let db_path_buf = path.join("trapezoid.sqlite");
-            let db_path = db_path_buf.as_path();
+        if path.is_dir() || create_parents {
+            if !path.is_dir() {
+                create_dir_all(path.clone())?;
+            }
+
+            let db_path = path.clone().join("trapezoid.sqlite");
             conn = Connection::open(db_path)?;
+
+            ignore_path = path.join(".tzignore");
         } else {
-            return Err(anyhow!(
-                "Directory '{}' does not exist",
-                data_path.display()
-            ));
+            return Err(anyhow!("Directory '{}' does not exist", data_path));
         };
 
         conn.execute(
@@ -45,8 +51,9 @@ impl Trapezoid<'static> {
         )?;
 
         Ok(Self {
-            data_path: &data_path,
+            data_path: path,
             db_conn: conn,
+            ignore_path,
         })
     }
 
@@ -54,17 +61,22 @@ impl Trapezoid<'static> {
         self: &mut Self,
         tags: Vec<&str>,
         glob: Pattern,
-        base: &Path,
-        ignore: Option<Vec<Pattern>>,
+        base: PathBuf,
     ) -> Result<AddOutput> {
-        println!("{:#?}", base);
+        let ignore_file = File::open(&self.ignore_path)?;
+        let ignore_lines = io::BufReader::new(ignore_file).lines();
+        let mut ignore: Vec<Pattern> = Vec::new();
+
+        for line in ignore_lines {
+            ignore.push(Pattern::new(line?.as_str())?);
+        }
 
         let entries = WalkDir::new(base)
             .into_iter()
             .filter_entry(|e| {
                 let filename = e.file_name().to_str().unwrap();
 
-                for pattern in ignore.as_ref().unwrap_or(&Vec::new()) {
+                for pattern in &ignore {
                     if pattern.matches(filename) {
                         return false;
                     }
@@ -73,11 +85,7 @@ impl Trapezoid<'static> {
                 return true;
             })
             .filter_map(|e| {
-                if match e {
-                    Ok(_) => true,
-                    Err(_) => false,
-                } && glob.matches(e.as_ref().unwrap().file_name().to_str().unwrap())
-                {
+                if e.is_ok() && glob.matches(e.as_ref().unwrap().file_name().to_str().unwrap()) {
                     return Some(e.unwrap());
                 }
 

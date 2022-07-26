@@ -1,12 +1,15 @@
-use std::path::PathBuf;
+use std::{
+    env,
+    fs::File,
+    io::{self, BufRead},
+    path::{Path, PathBuf},
+};
 
 use anyhow::Result;
-use clap::{arg, builder::ValueParser, command, Command};
+use clap::{arg, builder::ValueParser, command, ArgMatches, Command};
+use glob::Pattern;
 use normpath::PathExt;
-use trapezoid::{
-    utils::{to_path, to_pattern},
-    Trapezoid,
-};
+use trapezoid::Trapezoid;
 
 fn main() -> Result<()> {
     let matches = command!()
@@ -32,28 +35,27 @@ fn main() -> Result<()> {
         .get_matches();
 
     match matches.subcommand() {
-        Some(("tag", sub_matches)) => {
-            let tags = sub_matches
-                .get_many::<String>("add")
-                .unwrap()
-                .map(|v| v.as_str())
-                .collect::<Vec<&str>>();
-            let glob = to_pattern(sub_matches.get_one::<String>("glob").unwrap()).unwrap();
-            let base = sub_matches.get_one::<PathBuf>("base").unwrap();
-            let mut trapezoid =
-                Trapezoid::new(to_path("C://Users/mrhum/Projects/TrapezoidData")).unwrap();
-
-            let add_output = trapezoid.add_tags(
-                tags,
-                glob,
-                base.as_path().normalize().unwrap().as_path(),
-                None,
-            )?;
-
-            println!("{} files tagged", add_output.amount);
-        }
+        Some(("tag", sub_matches)) => subcommand_tag(sub_matches)?,
         _ => unreachable!("A subcommand is required"),
     }
+
+    Ok(())
+}
+
+fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
+    let tags = matches
+        .get_many::<String>("add")
+        .unwrap()
+        .map(|v| v.as_str())
+        .collect::<Vec<&str>>();
+
+    let glob = Pattern::new(matches.get_one::<String>("glob").unwrap()).unwrap();
+    let base = matches.get_one::<PathBuf>("base").unwrap();
+    let mut trapezoid = Trapezoid::new("C://Users/bee/Projects/TrapezoidData", true).unwrap();
+
+    let add_output = trapezoid.add_tags(tags, glob, base.normalize()?.as_path(), Some(ignore))?;
+
+    println!("{} files tagged", add_output.amount);
 
     Ok(())
 }
