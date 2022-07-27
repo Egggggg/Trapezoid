@@ -38,17 +38,16 @@ Arguments in \[] are optional
 
 ### Implemented Commands
 
-nah
+- **`trapezoid tag <--glob|-g> <--add|-a> <PATH>`** - Tags all files matching the given glob
+	- `<--glob|-g>`: *`glob`* - The globs files must match to be tagged
+	- `<--add|-a>`: *`string`* - The tags to add to matching files
+	- `<PATH>`: *`path`* - The base path to start the search at
 
 ### Planned Commands
 
-- **`trapezoid tag <GLOB> <TAGS> [-p|--path]`** - Tags all files matching the given glob
-	- `<GLOB>`: *`glob`* - The glob files must match to be tagged
-	- `<TAGS>`: *`string`* - The tags to add to matching files
+- **`trapezoid ignore <--glob|-g>`** - Adds a glob to the .tzignore file in the data directory
+	- `<--glob|-g>`: *`glob`* - The globs to add
 
-- **`trapezoid ignore <GLOB>`** - Adds a glob to the .tzignore file in the data directory
-  	- `<GLOB>`: *`glob`* - The glob to add
-
-- **`trapezoid list [-f|--filter] <TAGS>`** - Lists all files matching `TAGS`, depending on `filter`
-	- `filter`: *`or | and`* - If `or`, lists files matching any of `TAGS`, if `and` only lists files with all listed tags. Defaults to `and`
+- **`trapezoid list [--filter|-f] <TAGS>`** - Lists all files matching `TAGS`, depending on `filter`
+	- `[--filter|-f]`: *`or | and`* - If `or`, lists files matching any of `TAGS`, if `and` only lists files with all listed tags. Defaults to `and`
 	- `<TAGS>`: *`[string]`* - Any number of tags to use in the search
