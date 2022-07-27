@@ -58,8 +58,8 @@ impl Trapezoid {
 
     pub fn add_tags(
         self: &mut Self,
-        tags: Vec<String>,
-        globs: Vec<Pattern>,
+        tags: &Vec<String>,
+        globs: &Vec<Pattern>,
         base: PathBuf,
     ) -> Result<AddOutput> {
         let (ignore, err) = Gitignore::new(&self.ignore_path);
@@ -85,7 +85,7 @@ impl Trapezoid {
 
                     let filename = current.file_name().to_str().unwrap();
 
-                    for glob in &globs {
+                    for glob in globs {
                         if glob.matches(filename) {
                             return Some(current);
                         }
@@ -101,7 +101,7 @@ impl Trapezoid {
         for item in entries {
             amount += 1;
 
-            for tag in &tags {
+            for tag in tags {
                 tx.execute(
                     "INSERT INTO tags (path, tag) VALUES (?, ?)",
                     [item.path().to_str().unwrap(), tag],

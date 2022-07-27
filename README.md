@@ -38,10 +38,10 @@ Arguments in \[] are optional
 
 ### Implemented Commands
 
-- **`trapezoid tag <--glob|-g> <--add|-a> <PATH>`** - Tags all files matching the given glob
+- **`trapezoid tag <--glob|-g> <--add|-a> <--path|-p>`** - Tags all files matching any of the given globs
 	- `<--glob|-g>`: *`glob`* - The globs files must match to be tagged
 	- `<--add|-a>`: *`string`* - The tags to add to matching files
-	- `<PATH>`: *`path`* - The base path to start the search at
+	- `<--path|-p>`: *`path`* - The base path to start the search at
 
 ### Planned Commands
 
