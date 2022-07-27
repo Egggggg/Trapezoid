@@ -1,11 +1,8 @@
-use std::{
-    fs::{create_dir_all, File},
-    io::{self, BufRead},
-    path::PathBuf,
-};
+use std::{fs::create_dir_all, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use glob::Pattern;
+use ignore::gitignore::Gitignore;
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
@@ -27,15 +24,17 @@ impl Trapezoid {
         let conn: Connection;
         let ignore_path: PathBuf;
 
-        if path.is_dir() || create_parents {
-            if !path.is_dir() {
-                create_dir_all(path.clone())?;
-            }
+        if !path.is_dir() && !path.is_file() && create_parents {
+            create_dir_all(&path)?;
+        }
 
+        if path.is_dir() {
             let db_path = path.clone().join("trapezoid.sqlite");
             conn = Connection::open(db_path)?;
 
             ignore_path = path.join(".tzignore");
+
+            if !ignore_path.is_file() {}
         } else {
             return Err(anyhow!("Directory '{}' does not exist", data_path));
         };
@@ -59,34 +58,38 @@ impl Trapezoid {
 
     pub fn add_tags(
         self: &mut Self,
-        tags: Vec<&str>,
-        glob: Pattern,
+        tags: Vec<String>,
+        globs: Vec<Pattern>,
         base: PathBuf,
     ) -> Result<AddOutput> {
-        let ignore_file = File::open(&self.ignore_path)?;
-        let ignore_lines = io::BufReader::new(ignore_file).lines();
-        let mut ignore: Vec<Pattern> = Vec::new();
+        let (ignore, err) = Gitignore::new(&self.ignore_path);
 
-        for line in ignore_lines {
-            ignore.push(Pattern::new(line?.as_str())?);
+        if let Some(e) = err {
+            return Err(anyhow!(e));
         }
 
         let entries = WalkDir::new(base)
             .into_iter()
             .filter_entry(|e| {
-                let filename = e.file_name().to_str().unwrap();
+                let matched = ignore.matched(e.path(), e.path().is_dir());
 
-                for pattern in &ignore {
-                    if pattern.matches(filename) {
-                        return false;
-                    }
-                }
-
-                return true;
+                return !matched.is_ignore();
             })
             .filter_map(|e| {
-                if e.is_ok() && glob.matches(e.as_ref().unwrap().file_name().to_str().unwrap()) {
-                    return Some(e.unwrap());
+                if let Ok(current) = e {
+                    let matched = ignore.matched(current.path(), current.path().is_dir());
+
+                    if matched.is_ignore() {
+                        return None;
+                    }
+
+                    let filename = current.file_name().to_str().unwrap();
+
+                    for glob in &globs {
+                        if glob.matches(filename) {
+                            return Some(current);
+                        }
+                    }
                 }
 
                 return None;
