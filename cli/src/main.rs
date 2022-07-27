@@ -1,9 +1,4 @@
-use std::{
-    env,
-    fs::File,
-    io::{self, BufRead},
-    path::{Path, PathBuf},
-};
+use std::{env, path::PathBuf};
 
 use anyhow::Result;
 use clap::{arg, builder::ValueParser, command, ArgMatches, Command};
@@ -26,7 +21,11 @@ fn main() -> Result<()> {
                         .required(true)
                         .action(clap::ArgAction::Append),
                 )
-                .arg(arg!(<glob> "The glob to find files from").multiple_values(true))
+                .arg(
+                    arg!(-g --glob <glob> "The glob to find files from")
+                        .required(true)
+                        .action(clap::ArgAction::Append),
+                )
                 .arg(
                     arg!(<base> "Base path to start the search from")
                         .value_parser(ValueParser::path_buf()),
@@ -46,16 +45,21 @@ fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
     let tags = matches
         .get_many::<String>("add")
         .unwrap()
-        .map(|v| v.as_str())
-        .collect::<Vec<&str>>();
+        .map(|s| s.to_string())
+        .collect();
 
-    let glob = Pattern::new(matches.get_one::<String>("glob").unwrap()).unwrap();
+    let globs = matches
+        .get_many::<String>("glob")
+        .unwrap()
+        .map(|s| Pattern::new(s.as_str()).unwrap())
+        .collect();
+
     let base = matches.get_one::<PathBuf>("base").unwrap();
-    let mut trapezoid = Trapezoid::new("C://Users/bee/Projects/TrapezoidData", true).unwrap();
+    let mut trapezoid = Trapezoid::new("C://Users/mrhum/Projects/TrapezoidData", true).unwrap();
 
-    let add_output = trapezoid.add_tags(tags, glob, base.normalize()?.as_path(), Some(ignore))?;
+    let add_output = trapezoid.add_tags(tags, globs, base.normalize()?.into_path_buf());
 
-    println!("{} files tagged", add_output.amount);
+    println!("{} files tagged", add_output?.amount);
 
     Ok(())
 }
