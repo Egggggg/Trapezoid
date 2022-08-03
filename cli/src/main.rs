@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf};
+use std::{env::current_exe, path::PathBuf};
 
 use anyhow::Result;
 use clap::{arg, builder::ValueParser, command, ArgMatches, Command};
@@ -16,15 +16,15 @@ fn main() -> Result<()> {
         .subcommand(
             Command::new("tag")
                 .about("Tags files")
-                .arg(arg!(-a --add <tag> "Tags to apply").action(clap::ArgAction::Append))
+                .arg(arg!(-a --add <tag> ... "Tags to apply").action(clap::ArgAction::Append))
                 .arg(
-                    arg!(-g --glob <glob> "The glob to find files from")
+                    arg!(-g --glob <glob> ... "The glob to find files from")
                         .action(clap::ArgAction::Append),
                 )
                 .arg(
-                    arg!(-p --path [path] "Base path to start the search from")
-                        .value_parser(ValueParser::path_buf())
+                    arg!(-p --path ... "Base path to start the search from")
                         .action(clap::ArgAction::Append)
+                        .value_parser(ValueParser::path_buf())
                         .default_values(&["./"]),
                 ),
         )
@@ -57,9 +57,7 @@ fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
         .map(|p| p.to_path_buf())
         .collect();
 
-    println!("{:#?}", paths);
-
-    let mut trapezoid = Trapezoid::new("C://Users/mrhum/Projects/TrapezoidData", true).unwrap();
+    let mut trapezoid = Trapezoid::new(current_exe().unwrap(), true).unwrap();
 
     let mut output = AddOutput {
         amount: 0,

@@ -1,8 +1,12 @@
-use std::{fs::create_dir_all, path::PathBuf};
+use std::{
+    fs::{create_dir_all, File},
+    path::{Path, PathBuf},
+};
 
 use anyhow::{anyhow, Result};
 use glob::Pattern;
 use ignore::gitignore::Gitignore;
+use pathdiff::diff_paths;
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
@@ -19,8 +23,8 @@ pub struct AddOutput {
 }
 
 impl Trapezoid {
-    pub fn new(data_path: &str, create_parents: bool) -> Result<Self> {
-        let path = PathBuf::from(&data_path);
+    pub fn new<T: AsRef<Path>>(data_path: T, create_parents: bool) -> Result<Self> {
+        let path = data_path.as_ref();
         let conn: Connection;
         let ignore_path: PathBuf;
 
@@ -34,9 +38,11 @@ impl Trapezoid {
 
             ignore_path = path.join(".tzignore");
 
-            if !ignore_path.is_file() {}
+            if !ignore_path.is_file() {
+                File::create(&ignore_path)?;
+            }
         } else {
-            return Err(anyhow!("Directory '{}' does not exist", data_path));
+            return Err(anyhow!("Directory '{}' does not exist", path.display()));
         };
 
         conn.execute(
@@ -50,17 +56,17 @@ impl Trapezoid {
         )?;
 
         Ok(Self {
-            data_path: path,
+            data_path: path.to_path_buf(),
             db_conn: conn,
             ignore_path,
         })
     }
 
-    pub fn add_tags(
+    pub fn add_tags<T: AsRef<Path>>(
         self: &mut Self,
         tags: &Vec<String>,
         globs: &Vec<Pattern>,
-        base: PathBuf,
+        base: T,
     ) -> Result<AddOutput> {
         let (ignore, err) = Gitignore::new(&self.ignore_path);
 
@@ -68,7 +74,7 @@ impl Trapezoid {
             return Err(anyhow!(e));
         }
 
-        let entries = WalkDir::new(base)
+        let entries = WalkDir::new(base.as_ref())
             .into_iter()
             .filter_entry(|e| {
                 let matched = ignore.matched(e.path(), e.path().is_dir());
@@ -83,10 +89,14 @@ impl Trapezoid {
                         return None;
                     }
 
-                    let filename = current.file_name().to_str().unwrap();
+                    let filename = current.file_name().to_str()?;
+
+                    let abs_path = current.path();
+                    let rel_path = diff_paths(abs_path, base.as_ref())?;
+                    let rel_path_str = rel_path.to_str()?;
 
                     for glob in globs {
-                        if glob.matches(filename) {
+                        if glob.matches(filename) || glob.matches(rel_path_str) {
                             return Some(current);
                         }
                     }
@@ -98,14 +108,15 @@ impl Trapezoid {
         let tx = self.db_conn.transaction()?;
         let mut amount = 0;
 
-        for item in entries {
-            amount += 1;
+        {
+            let mut insert = tx.prepare("INSERT INTO tags (path, tag) VALUES (?, ?)")?;
 
-            for tag in tags {
-                tx.execute(
-                    "INSERT INTO tags (path, tag) VALUES (?, ?)",
-                    [item.path().to_str().unwrap(), tag],
-                )?;
+            for item in entries {
+                amount += 1;
+
+                for tag in tags {
+                    insert.execute([item.path().to_str().unwrap(), tag])?;
+                }
             }
         }
 

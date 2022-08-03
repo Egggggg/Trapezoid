@@ -11,3 +11,4 @@ walkdir = "2.0"
 ignore = "0.4.18"
 rusqlite = { version = "0.28.0", features = ["bundled"] }
 anyhow = "1.0.58"
+pathdiff = "0.2.1"
