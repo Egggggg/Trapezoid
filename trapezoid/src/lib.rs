@@ -46,12 +46,34 @@ impl Trapezoid {
         };
 
         conn.execute(
-            "CREATE TABLE IF NOT EXISTS 'tags' (
-			'id'	INTEGER NOT NULL UNIQUE,
-			'path'	TEXT NOT NULL,
-			'tag'	TEXT NOT NULL,
-			PRIMARY KEY('id' AUTOINCREMENT)
-		)",
+            r#"CREATE TABLE IF NOT EXISTS "queries" (
+			"id"	  INTEGER NOT NULL UNIQUE,
+			"content" TEXT,
+			"used"	  INTEGER,
+			PRIMARY KEY("id" AUTOINCREMENT)
+		)"#,
+            [],
+        )?;
+
+        conn.execute(
+            r#"CREATE TABLE IF NOT EXISTS "tags" (
+			"id"	INTEGER NOT NULL UNIQUE,
+			"tag"	TEXT UNIQUE,
+			PRIMARY KEY("id" AUTOINCREMENT)
+		)"#,
+            [],
+        )?;
+
+        conn.execute(
+            r#"CREATE TABLE IF NOT EXISTS "items" (
+				"id"	 INTEGER NOT NULL UNIQUE,
+				"path"	 TEXT NOT NULL,
+				"tag"	 INTEGER,
+				"source" INTEGER,
+				PRIMARY KEY("id" AUTOINCREMENT),
+				FOREIGN KEY("tag") REFERENCES "tags"("id") ON DELETE CASCADE,
+				FOREIGN KEY("source") REFERENCES "queries"("id") ON DELETE CASCADE
+			)"#,
             [],
         )?;
 
@@ -109,13 +131,33 @@ impl Trapezoid {
         let mut amount = 0;
 
         {
-            let mut insert = tx.prepare("INSERT INTO tags (path, tag) VALUES (?, ?)")?;
+            let mut select_tag = tx.prepare("SELECT id FROM tags WHERE tag = ?")?;
+            let mut insert_tag = tx.prepare("INSERT INTO tags (tag) VALUES (?)")?;
+            let mut insert_item =
+                tx.prepare("INSERT INTO items (path, tag, source) VALUES (?, ?, ?)")?;
+            let mut tag_ids: &mut Vec<String> = &Vec::new();
+
+            for tag in tags {
+                if !select_tag.exists([tag])? {
+                    insert_tag.execute([tag])?;
+                }
+
+                let tag_id = select_tag.query_row([tag], |row| {
+                    let id = row.get::<usize, String>(0);
+                    return Ok(id?);
+                })?;
+
+                tag_ids.push(tag_id);
+            }
 
             for item in entries {
                 amount += 1;
 
-                for tag in tags {
-                    insert.execute([item.path().to_str().unwrap(), tag])?;
+                // should be safe to unwrap, item was just found
+                let path = item.path().to_str().unwrap();
+
+                for tag in tag_ids {
+                    insert_item.execute([path, tag.as_str()])?;
                 }
             }
         }
