@@ -133,9 +133,10 @@ impl Trapezoid {
         {
             let mut select_tag = tx.prepare("SELECT id FROM tags WHERE tag = ?")?;
             let mut insert_tag = tx.prepare("INSERT INTO tags (tag) VALUES (?)")?;
+            let mut insert_source = tx.prepare("INSERT INTO queries (content) VALUES (?)");
             let mut insert_item =
                 tx.prepare("INSERT INTO items (path, tag, source) VALUES (?, ?, ?)")?;
-            let mut tag_ids: &mut Vec<String> = &Vec::new();
+            let mut tag_ids: Vec<String> = Vec::new();
 
             for tag in tags {
                 if !select_tag.exists([tag])? {
@@ -156,7 +157,7 @@ impl Trapezoid {
                 // should be safe to unwrap, item was just found
                 let path = item.path().to_str().unwrap();
 
-                for tag in tag_ids {
+                for tag in &tag_ids {
                     insert_item.execute([path, tag.as_str()])?;
                 }
             }
