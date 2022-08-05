@@ -16,13 +16,16 @@ fn main() -> Result<()> {
         .subcommand(
             Command::new("tag")
                 .about("Tags files")
-                .arg(arg!(-a --add <tag> ... "Tags to apply").action(clap::ArgAction::Append))
                 .arg(
-                    arg!(-g --glob <glob> ... "The glob to find files from")
+                    arg!(-a --add <tag> ... "Tag to apply, can have multiple occurrences")
                         .action(clap::ArgAction::Append),
                 )
                 .arg(
-                    arg!(-p --path ... "Base path to start the search from")
+                    arg!(-g --glob <glob> ... "The glob to find files from, can have multiple occurrences")
+                        .action(clap::ArgAction::Append),
+                )
+                .arg(
+                    arg!(-p --path [path] ... "Base path to start the search from")
                         .action(clap::ArgAction::Append)
                         .value_parser(ValueParser::path_buf())
                         .default_values(&["./"]),
@@ -57,20 +60,24 @@ fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
         .map(|p| p.to_path_buf())
         .collect();
 
-    let mut trapezoid = Trapezoid::new(current_exe().unwrap(), true).unwrap();
+    let mut current_exe_dir = current_exe().unwrap();
 
-    let mut output = AddOutput {
-        amount: 0,
-        tags: tags.clone(),
-    };
+    current_exe_dir.pop();
+
+    let mut trapezoid = Trapezoid::new(current_exe_dir, true).unwrap();
+    let mut output = AddOutput::new();
 
     for path in paths {
         let add_output = trapezoid.add_tags(&tags, &globs, path.normalize()?.into_path_buf())?;
 
-        output.amount += add_output.amount;
+        output += add_output;
     }
 
-    println!("{} files tagged", output.amount);
+    println!("{} files matched", output.matched_files);
+    println!("{} files tagged", output.tagged_files);
+
+    println!("{} directories matched", output.matched_dirs);
+    println!("{} directories tagged", output.tagged_dirs);
 
     Ok(())
 }

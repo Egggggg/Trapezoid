@@ -1,5 +1,6 @@
 use std::{
     fs::{create_dir_all, File},
+    ops::{Add, AddAssign},
     path::{Path, PathBuf},
 };
 
@@ -7,7 +8,7 @@ use anyhow::{anyhow, Result};
 use glob::Pattern;
 use ignore::gitignore::Gitignore;
 use pathdiff::diff_paths;
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use walkdir::WalkDir;
 
 pub struct Trapezoid {
@@ -16,10 +17,61 @@ pub struct Trapezoid {
     pub ignore_path: PathBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct AddOutput {
-    pub amount: i32,
+    pub matched_files: i32,
+    pub tagged_files: i32,
+    pub matched_dirs: i32,
+    pub tagged_dirs: i32,
     pub tags: Vec<String>,
+}
+
+fn vec_union(first: &Vec<String>, second: Vec<String>) -> Vec<String> {
+    let mut output = first.clone();
+
+    for item in second {
+        if !output.contains(&item) {
+            output.push(item);
+        }
+    }
+
+    return output;
+}
+
+impl AddOutput {
+    pub fn new() -> Self {
+        AddOutput {
+            matched_files: 0,
+            tagged_files: 0,
+            matched_dirs: 0,
+            tagged_dirs: 0,
+            tags: Vec::new(),
+        }
+    }
+}
+
+impl Add for AddOutput {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            matched_files: self.matched_files + other.matched_files,
+            tagged_files: self.tagged_files + other.tagged_files,
+            matched_dirs: self.matched_dirs + other.matched_dirs,
+            tagged_dirs: self.tagged_dirs + other.tagged_dirs,
+            tags: vec_union(&self.tags, other.tags),
+        }
+    }
+}
+
+impl AddAssign for AddOutput {
+    fn add_assign(&mut self, other: Self) {
+        self.matched_files += other.matched_files;
+        self.tagged_files += other.tagged_files;
+        self.matched_dirs += other.matched_dirs;
+        self.tagged_dirs += other.tagged_dirs;
+        self.tags = vec_union(&self.tags, other.tags);
+    }
 }
 
 impl Trapezoid {
@@ -46,16 +98,6 @@ impl Trapezoid {
         };
 
         conn.execute(
-            r#"CREATE TABLE IF NOT EXISTS "queries" (
-			"id"	  INTEGER NOT NULL UNIQUE,
-			"content" TEXT,
-			"used"	  INTEGER,
-			PRIMARY KEY("id" AUTOINCREMENT)
-		)"#,
-            [],
-        )?;
-
-        conn.execute(
             r#"CREATE TABLE IF NOT EXISTS "tags" (
 			"id"	INTEGER NOT NULL UNIQUE,
 			"tag"	TEXT UNIQUE,
@@ -69,10 +111,8 @@ impl Trapezoid {
 				"id"	 INTEGER NOT NULL UNIQUE,
 				"path"	 TEXT NOT NULL,
 				"tag"	 INTEGER,
-				"source" INTEGER,
 				PRIMARY KEY("id" AUTOINCREMENT),
-				FOREIGN KEY("tag") REFERENCES "tags"("id") ON DELETE CASCADE,
-				FOREIGN KEY("source") REFERENCES "queries"("id") ON DELETE CASCADE
+				FOREIGN KEY("tag") REFERENCES "tags"("id") ON DELETE CASCADE
 			)"#,
             [],
         )?;
@@ -128,37 +168,62 @@ impl Trapezoid {
             });
 
         let tx = self.db_conn.transaction()?;
-        let mut amount = 0;
+        let mut matched_files = 0;
+        let mut tagged_files = 0;
+        let mut matched_dirs = 0;
+        let mut tagged_dirs = 0;
 
         {
             let mut select_tag = tx.prepare("SELECT id FROM tags WHERE tag = ?")?;
             let mut insert_tag = tx.prepare("INSERT INTO tags (tag) VALUES (?)")?;
-            let mut insert_source = tx.prepare("INSERT INTO queries (content) VALUES (?)");
-            let mut insert_item =
-                tx.prepare("INSERT INTO items (path, tag, source) VALUES (?, ?, ?)")?;
-            let mut tag_ids: Vec<String> = Vec::new();
+            let mut select_item = tx.prepare("SELECT id FROM items WHERE path = ? AND tag = ?")?;
+            let mut insert_item = tx.prepare("INSERT INTO items (path, tag) VALUES (?, ?)")?;
+
+            let mut tag_ids: Vec<i64> = Vec::new();
 
             for tag in tags {
                 if !select_tag.exists([tag])? {
-                    insert_tag.execute([tag])?;
+                    let tag_id = insert_tag.insert([tag])?;
+
+                    tag_ids.push(tag_id);
+                } else {
+                    let tag_id = select_tag.query_row([tag], |row| {
+                        let id = row.get(0)?;
+                        return Ok(id);
+                    })?;
+
+                    tag_ids.push(tag_id);
                 }
-
-                let tag_id = select_tag.query_row([tag], |row| {
-                    let id = row.get::<usize, String>(0);
-                    return Ok(id?);
-                })?;
-
-                tag_ids.push(tag_id);
             }
 
             for item in entries {
-                amount += 1;
+                let dir = item.path().is_dir();
+
+                if dir {
+                    matched_dirs += 1;
+                } else {
+                    matched_files += 1;
+                }
+
+                let mut added = false;
 
                 // should be safe to unwrap, item was just found
                 let path = item.path().to_str().unwrap();
 
                 for tag in &tag_ids {
-                    insert_item.execute([path, tag.as_str()])?;
+                    if !select_item.exists(params![path, tag])? {
+                        if !added {
+                            if dir {
+                                tagged_dirs += 1;
+                            } else {
+                                tagged_files += 1;
+                            }
+
+                            added = true;
+                        }
+
+                        insert_item.insert(params![path, tag])?;
+                    }
                 }
             }
         }
@@ -172,7 +237,10 @@ impl Trapezoid {
         }
 
         return Ok(AddOutput {
-            amount,
+            matched_files,
+            tagged_files,
+            matched_dirs,
+            tagged_dirs,
             tags: tags_out,
         });
     }
