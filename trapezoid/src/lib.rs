@@ -209,8 +209,13 @@ impl Trapezoid {
 
                 let mut added = false;
 
-                // should be safe to unwrap, item was just found
-                let path = item.path().to_str().unwrap();
+                let path_opt = item.path().to_str();
+
+                if path_opt.is_none() {
+                    continue;
+                }
+
+                let path = path_opt.unwrap();
 
                 for tag in &tag_ids {
                     if !select_item.exists(params![path, tag])? {
