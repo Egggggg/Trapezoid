@@ -50,6 +50,7 @@ impl AddOutput {
     }
 }
 
+/// Add `AddOutput`s together with +
 impl Add for AddOutput {
     type Output = Self;
 
@@ -64,6 +65,7 @@ impl Add for AddOutput {
     }
 }
 
+/// Add `AddOutput`s together with +=
 impl AddAssign for AddOutput {
     fn add_assign(&mut self, other: Self) {
         self.matched_files += other.matched_files;
