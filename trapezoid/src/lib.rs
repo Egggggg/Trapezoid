@@ -1,12 +1,12 @@
 use std::{
     fs::{create_dir_all, File},
+    io::{BufRead, BufReader},
     ops::{Add, AddAssign},
     path::{Path, PathBuf},
 };
 
 use anyhow::{anyhow, Result};
-use glob::Pattern;
-use ignore::gitignore::Gitignore;
+use glob::{Pattern, PatternError};
 use pathdiff::diff_paths;
 use rusqlite::{params, Connection};
 use walkdir::WalkDir;
@@ -76,6 +76,63 @@ impl AddAssign for AddOutput {
     }
 }
 
+#[derive(Debug)]
+enum ReadIgnoreErr {
+    Io(std::io::Error),
+    Pattern(PatternError),
+}
+
+impl From<std::io::Error> for ReadIgnoreErr {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<PatternError> for ReadIgnoreErr {
+    fn from(e: PatternError) -> Self {
+        Self::Pattern(e)
+    }
+}
+
+impl std::fmt::Display for ReadIgnoreErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadIgnoreErr::Io(e) => write!(f, "{}", e),
+            ReadIgnoreErr::Pattern(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl std::error::Error for ReadIgnoreErr {}
+
+fn read_ignore(ignore_path: PathBuf) -> Result<Vec<Pattern>> {
+    let file = File::open(ignore_path)?;
+
+    let lines = BufReader::new(file).lines();
+
+    // turn lines into a Vec<String>, or, if any lines are invalid utf-8, return an std::io::Error
+    let lines: Result<Vec<String>, _> = lines.into_iter().collect();
+    let lines = lines?;
+
+    let patterns: Result<Vec<Pattern>, _> = lines
+        .into_iter()
+        .map(|s| {
+            let s = if !s.starts_with("/") {
+                "**/".to_owned() + &s
+            } else {
+                s
+            };
+
+            let s = if s.ends_with("/") { s + "**" } else { s };
+
+            Pattern::new(s.as_str())
+        })
+        .collect();
+    let patterns = patterns?;
+
+    Ok(patterns)
+}
+
 impl Trapezoid {
     pub fn new<T: AsRef<Path>>(data_path: T, create_parents: bool) -> Result<Self> {
         let path = data_path.as_ref();
@@ -132,35 +189,46 @@ impl Trapezoid {
         globs: &Vec<Pattern>,
         base: T,
     ) -> Result<AddOutput> {
-        let (ignore, err) = Gitignore::new(&self.ignore_path);
-
-        if let Some(e) = err {
-            return Err(anyhow!(e));
-        }
+        let ignore = read_ignore(self.ignore_path.clone())?;
 
         let entries = WalkDir::new(base.as_ref())
             .into_iter()
             .filter_entry(|e| {
-                let matched = ignore.matched(e.path(), e.path().is_dir());
+                for pattern in ignore.iter() {
+                    let path = e.path().to_str();
 
-                return !matched.is_ignore();
+                    if match path {
+                        Some(path) => pattern.matches(path),
+                        None => true,
+                    } {
+                        return false;
+                    }
+                }
+
+                true
             })
             .filter_map(|e| {
                 if let Ok(current) = e {
-                    let matched = ignore.matched(current.path(), current.path().is_dir());
-
-                    if matched.is_ignore() {
-                        return None;
-                    }
-
                     let filename = current.file_name().to_str()?;
 
                     let abs_path = current.path();
                     let rel_path = diff_paths(abs_path, base.as_ref())?;
                     let rel_path_str = rel_path.to_str()?;
 
+                    for pattern in ignore.iter() {
+                        let path = current.path().to_str();
+
+                        if match path {
+                            Some(path) => pattern.matches(path),
+                            None => true,
+                        } {
+                            return None;
+                        }
+                    }
+
                     for glob in globs {
                         if glob.matches(filename) || glob.matches(rel_path_str) {
+                            println!("{:#?}", rel_path_str);
                             return Some(current);
                         }
                     }

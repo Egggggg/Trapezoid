@@ -12,6 +12,8 @@ fn main() -> Result<()> {
         .version("0.1.0")
         .about("CLI for a file tagging app called Trapezoid")
         .display_name("Trapezoid")
+		.name("Trapezoid")
+		.bin_name("trapezoid")
         .subcommand_required(true)
         .subcommand(
             Command::new("tag")
