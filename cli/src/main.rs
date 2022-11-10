@@ -3,7 +3,7 @@ use std::{env::current_exe, path::PathBuf};
 use clap::{arg, builder::ValueParser, command, ArgMatches, Command};
 use glob::Pattern;
 use normpath::PathExt;
-use trapezoid::{AddOutput, Trapezoid};
+use trapezoid::Trapezoid;
 
 fn main() -> anyhow::Result<()> {
     let matches = command!()
@@ -32,10 +32,23 @@ fn main() -> anyhow::Result<()> {
                         .default_values(&["./"]),
                 ),
         )
+		.subcommand(
+			Command::new("list")
+				.about("Lists tagged files")
+				.arg(
+					arg!(-t --tag <tags> ... "The tag(s) to search by. Multiple tags under one occurrence are ANDed, multiple occurrences are ORed")	
+						.value_delimiter(',')
+						.action(clap::ArgAction::Append)
+				)
+				.arg(
+					arg!(-f)
+				)
+		)
         .get_matches();
 
     match matches.subcommand() {
-        Some(("tag", sub_matches)) => subcommand_tag(sub_matches)?,
+        Some(("tag", submatches)) => subcommand_tag(submatches)?,
+        Some(("list", submatches)) => subcommand_list(submatches)?,
         _ => unreachable!("A subcommand is required"),
     }
 
@@ -46,13 +59,13 @@ fn subcommand_tag(matches: &ArgMatches) -> anyhow::Result<()> {
     let tags: Vec<String> = matches
         .get_many::<String>("add")
         .unwrap()
-        .map(|s| s.to_string())
+        .map(|s| s.to_owned())
         .collect();
 
     let globs: Vec<Pattern> = matches
         .get_many::<String>("glob")
         .unwrap()
-        .map(|s| Pattern::new(s.as_str()).unwrap())
+        .map(|s| Pattern::new(s).unwrap())
         .collect();
 
     let paths: anyhow::Result<Vec<PathBuf>> = matches
@@ -78,4 +91,12 @@ fn subcommand_tag(matches: &ArgMatches) -> anyhow::Result<()> {
     println!("{} directories tagged", output.tagged_dirs);
 
     Ok(())
+}
+
+fn subcommand_list(matches: &ArgMatches) -> anyhow::Result<()> {
+    let tags: Vec<Vec<String>> = matches
+        .get_many::<Vec<String>>("tag")
+        .unwrap()
+        .map(|e| e.iter().map(|f| f.to_string()).collect())
+        .collect();
 }

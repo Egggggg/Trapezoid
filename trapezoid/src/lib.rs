@@ -110,6 +110,7 @@ impl Trapezoid {
             r#"CREATE TABLE IF NOT EXISTS "items" (
 				"id"	 INTEGER NOT NULL UNIQUE,
 				"path"	 TEXT NOT NULL,
+				"type"   TEXT,
 				"tag"	 INTEGER,
 				PRIMARY KEY("id" AUTOINCREMENT),
 				FOREIGN KEY("tag") REFERENCES "tags"("id") ON DELETE CASCADE
@@ -177,7 +178,8 @@ impl Trapezoid {
             let mut select_tag = tx.prepare("SELECT id FROM tags WHERE tag = ?")?;
             let mut insert_tag = tx.prepare("INSERT INTO tags (tag) VALUES (?)")?;
             let mut select_item = tx.prepare("SELECT id FROM items WHERE path = ? AND tag = ?")?;
-            let mut insert_item = tx.prepare("INSERT INTO items (path, tag) VALUES (?, ?)")?;
+            let mut insert_item =
+                tx.prepare("INSERT INTO items (path, type, tag) VALUES (?, ?)")?;
 
             let mut tag_ids: Vec<i64> = Vec::new();
 
@@ -227,7 +229,9 @@ impl Trapezoid {
                             added = true;
                         }
 
-                        insert_item.insert(params![path, tag])?;
+                        let item_type = if dir { "D" } else { "F" };
+
+                        insert_item.insert(params![path, item_type, tag])?;
                     }
                 }
             }
