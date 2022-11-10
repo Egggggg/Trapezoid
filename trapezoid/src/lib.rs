@@ -1,15 +1,13 @@
 use std::{
     fs::{create_dir_all, File},
-    io::{BufRead, BufReader},
     ops::{Add, AddAssign},
     path::{Path, PathBuf},
 };
 
-use anyhow::{anyhow, Result};
-use glob::{Pattern, PatternError};
-use pathdiff::diff_paths;
+use anyhow::anyhow;
+use glob::Pattern;
+use ignore::WalkBuilder;
 use rusqlite::{params, Connection};
-use walkdir::WalkDir;
 
 pub struct Trapezoid {
     pub data_path: PathBuf,
@@ -76,65 +74,8 @@ impl AddAssign for AddOutput {
     }
 }
 
-#[derive(Debug)]
-enum ReadIgnoreErr {
-    Io(std::io::Error),
-    Pattern(PatternError),
-}
-
-impl From<std::io::Error> for ReadIgnoreErr {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
-}
-
-impl From<PatternError> for ReadIgnoreErr {
-    fn from(e: PatternError) -> Self {
-        Self::Pattern(e)
-    }
-}
-
-impl std::fmt::Display for ReadIgnoreErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ReadIgnoreErr::Io(e) => write!(f, "{}", e),
-            ReadIgnoreErr::Pattern(e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl std::error::Error for ReadIgnoreErr {}
-
-fn read_ignore(ignore_path: PathBuf) -> Result<Vec<Pattern>> {
-    let file = File::open(ignore_path)?;
-
-    let lines = BufReader::new(file).lines();
-
-    // turn lines into a Vec<String>, or, if any lines are invalid utf-8, return an std::io::Error
-    let lines: Result<Vec<String>, _> = lines.into_iter().collect();
-    let lines = lines?;
-
-    let patterns: Result<Vec<Pattern>, _> = lines
-        .into_iter()
-        .map(|s| {
-            let s = if !s.starts_with("/") {
-                "**/".to_owned() + &s
-            } else {
-                s
-            };
-
-            let s = if s.ends_with("/") { s + "**" } else { s };
-
-            Pattern::new(s.as_str())
-        })
-        .collect();
-    let patterns = patterns?;
-
-    Ok(patterns)
-}
-
 impl Trapezoid {
-    pub fn new<T: AsRef<Path>>(data_path: T, create_parents: bool) -> Result<Self> {
+    pub fn new<T: AsRef<Path>>(data_path: T, create_parents: bool) -> anyhow::Result<Self> {
         let path = data_path.as_ref();
         let conn: Connection;
         let ignore_path: PathBuf;
@@ -185,57 +126,46 @@ impl Trapezoid {
 
     pub fn add_tags<T: AsRef<Path>>(
         self: &mut Self,
-        tags: &Vec<String>,
-        globs: &Vec<Pattern>,
-        base: T,
-    ) -> Result<AddOutput> {
-        let ignore = read_ignore(self.ignore_path.clone())?;
+        tags: Vec<String>,
+        globs: Vec<Pattern>,
+        paths: &mut Vec<T>,
+    ) -> anyhow::Result<AddOutput> {
+        if tags.len() == 0 {
+            return Err(anyhow!("You need to supply at least one tag"));
+        }
+        if globs.len() == 0 {
+            return Err(anyhow!("You need to supply at least one glob"));
+        }
+        if paths.len() == 0 {
+            return Err(anyhow!("You need to supply at least one path"));
+        }
 
-        let entries = WalkDir::new(base.as_ref())
-            .into_iter()
-            .filter_entry(|e| {
-                for pattern in ignore.iter() {
-                    let path = e.path().to_str();
+        // can unwrap cause we made sure it had at least 1 up there
+        let mut walker = WalkBuilder::new(paths.pop().unwrap());
 
-                    if match path {
-                        Some(path) => pattern.matches(path),
-                        None => true,
-                    } {
-                        return false;
+        for path in paths {
+            walker.add(path);
+        }
+
+        walker.add_ignore(self.ignore_path.clone());
+        walker.add_custom_ignore_filename(".tzignore");
+        walker.git_ignore(false);
+
+        let walking = walker.build();
+
+        let entries = walking.filter_map(|item| {
+            if let Ok(entry) = item {
+                for glob in globs.clone() {
+                    let path = entry.path().to_str()?;
+
+                    if glob.matches(path) {
+                        return Some(entry);
                     }
                 }
+            }
 
-                true
-            })
-            .filter_map(|e| {
-                if let Ok(current) = e {
-                    let filename = current.file_name().to_str()?;
-
-                    let abs_path = current.path();
-                    let rel_path = diff_paths(abs_path, base.as_ref())?;
-                    let rel_path_str = rel_path.to_str()?;
-
-                    for pattern in ignore.iter() {
-                        let path = current.path().to_str();
-
-                        if match path {
-                            Some(path) => pattern.matches(path),
-                            None => true,
-                        } {
-                            return None;
-                        }
-                    }
-
-                    for glob in globs {
-                        if glob.matches(filename) || glob.matches(rel_path_str) {
-                            println!("{:#?}", rel_path_str);
-                            return Some(current);
-                        }
-                    }
-                }
-
-                return None;
-            });
+            None
+        });
 
         let tx = self.db_conn.transaction()?;
         let mut matched_files = 0;
@@ -251,7 +181,7 @@ impl Trapezoid {
 
             let mut tag_ids: Vec<i64> = Vec::new();
 
-            for tag in tags {
+            for tag in tags.iter() {
                 if !select_tag.exists([tag])? {
                     let tag_id = insert_tag.insert([tag])?;
 

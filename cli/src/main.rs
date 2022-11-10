@@ -1,12 +1,11 @@
 use std::{env::current_exe, path::PathBuf};
 
-use anyhow::Result;
 use clap::{arg, builder::ValueParser, command, ArgMatches, Command};
 use glob::Pattern;
 use normpath::PathExt;
 use trapezoid::{AddOutput, Trapezoid};
 
-fn main() -> Result<()> {
+fn main() -> anyhow::Result<()> {
     let matches = command!()
         .author("Bee Clark")
         .version("0.1.0")
@@ -43,7 +42,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
+fn subcommand_tag(matches: &ArgMatches) -> anyhow::Result<()> {
     let tags: Vec<String> = matches
         .get_many::<String>("add")
         .unwrap()
@@ -56,24 +55,21 @@ fn subcommand_tag(matches: &ArgMatches) -> Result<()> {
         .map(|s| Pattern::new(s.as_str()).unwrap())
         .collect();
 
-    let paths: Vec<PathBuf> = matches
+    let paths: anyhow::Result<Vec<PathBuf>> = matches
         .get_many::<PathBuf>("path")
         .unwrap()
-        .map(|p| p.to_path_buf())
+        .map(|p| Ok(p.normalize()?.into_path_buf()))
         .collect();
+
+    let mut paths = paths.unwrap();
 
     let mut current_exe_dir = current_exe().unwrap();
 
     current_exe_dir.pop();
 
     let mut trapezoid = Trapezoid::new(current_exe_dir, true).unwrap();
-    let mut output = AddOutput::new();
 
-    for path in paths {
-        let add_output = trapezoid.add_tags(&tags, &globs, path.normalize()?.into_path_buf())?;
-
-        output += add_output;
-    }
+    let output = trapezoid.add_tags(tags, globs, &mut paths)?;
 
     println!("{} files matched", output.matched_files);
     println!("{} files tagged", output.tagged_files);
